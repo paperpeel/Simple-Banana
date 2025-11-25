@@ -1,0 +1,5 @@
+{
+  "name": "Nano Banana Pro Studio",
+  "description": "A high-performance GUI for generating professional-grade images using the Gemini Nano Banana Pro model (gemini-3-pro-image-preview), featuring proxy support for restricted network environments.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,10 @@
+
+version: '3.8'
+
+services:
+  nano-banana-gui:
+    build: .
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    container_name: nano-banana-studio
