@@ -16,9 +16,9 @@ export const translations = {
     save: "Save Settings",
     galleryEmpty: "No images generated yet.",
     model: "Model",
-    refImage: "Reference Image",
+    refImage: "Reference Images",
     optional: "(Optional)",
-    uploadText: "Click to upload reference",
+    uploadText: "Add Image",
     prompt: "Prompt",
     promptPlaceholder: "Describe your image...",
     aspectRatioLabel: "Aspect Ratio",
@@ -32,10 +32,12 @@ export const translations = {
     gallery: "Gallery",
     download: "Download",
     refImageUsed: "Ref Image Used",
+    imagesCount: "images",
     errorApiKey: "API Key is missing. Please add it in settings.",
     errorImageLarge: "Image is too large. Please choose an image under 5MB.",
     errorProcessImage: "Failed to process image file.",
     errorGenFailed: "Failed to generate image.",
+    maxImagesReached: "Max images reached.",
     
     // Option Mappings
     modelOptions: {
@@ -75,7 +77,7 @@ export const translations = {
     model: "模型",
     refImage: "参考图",
     optional: "(可选)",
-    uploadText: "点击上传参考图",
+    uploadText: "添加图片",
     prompt: "提示词",
     promptPlaceholder: "描述您想要生成的画面...",
     aspectRatioLabel: "画面比例",
@@ -89,10 +91,12 @@ export const translations = {
     gallery: "图库",
     download: "下载",
     refImageUsed: "使用了参考图",
+    imagesCount: "张图片",
     errorApiKey: "缺少 API 密钥。请在设置中添加。",
     errorImageLarge: "图片过大。请选择小于 5MB 的图片。",
     errorProcessImage: "处理图片文件失败。",
     errorGenFailed: "生成图片失败。",
+    maxImagesReached: "已达图片上限。",
 
     // Option Mappings
     modelOptions: {

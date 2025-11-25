@@ -20,14 +20,18 @@ export enum ModelType {
 
 export type Language = 'en' | 'zh';
 
+export interface ReferenceImage {
+  data: string; // Base64 string (raw)
+  mimeType: string;
+}
+
 export interface GenerationSettings {
   prompt: string;
   model: ModelType;
   aspectRatio: AspectRatio;
   imageSize: ImageSize;
   negativePrompt?: string;
-  referenceImage?: string; // Base64 string (raw)
-  referenceImageMimeType?: string;
+  referenceImages?: ReferenceImage[];
 }
 
 export interface GeneratedImage {
@@ -39,7 +43,7 @@ export interface GeneratedImage {
     model: ModelType;
     aspectRatio: AspectRatio;
     imageSize: ImageSize;
-    hasReferenceImage?: boolean;
+    referenceImageCount?: number;
   };
 }
 

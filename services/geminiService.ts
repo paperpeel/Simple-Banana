@@ -41,13 +41,15 @@ export const generateImage = async ({ settings, baseUrl, apiKey }: GenerateImage
   try {
     const parts: any[] = [];
 
-    // Add Reference Image if present
-    if (settings.referenceImage && settings.referenceImageMimeType) {
-      parts.push({
-        inlineData: {
-          data: settings.referenceImage,
-          mimeType: settings.referenceImageMimeType,
-        },
+    // Add Reference Images if present
+    if (settings.referenceImages && settings.referenceImages.length > 0) {
+      settings.referenceImages.forEach(img => {
+        parts.push({
+          inlineData: {
+            data: img.data,
+            mimeType: img.mimeType,
+          },
+        });
       });
     }
 

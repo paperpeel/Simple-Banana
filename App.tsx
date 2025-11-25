@@ -1,11 +1,19 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AspectRatio, ImageSize, GenerationSettings, GeneratedImage, ModelType, Language } from './types';
-import { ASPECT_RATIO_OPTIONS, IMAGE_SIZE_OPTIONS, MODEL_OPTIONS, DEFAULT_BASE_URL, DEFAULT_MODEL } from './constants';
+import { ASPECT_RATIO_OPTIONS, IMAGE_SIZE_OPTIONS, MODEL_OPTIONS, DEFAULT_BASE_URL, DEFAULT_MODEL, MAX_REFERENCE_IMAGES } from './constants';
 import { generateImage } from './services/geminiService';
 import SettingsModal from './components/SettingsModal';
 import Gallery from './components/Gallery';
 import { translations } from './locales';
+
+// Interface for managing UI state of uploaded images
+interface UploadedImage {
+  id: string;
+  preview: string; // Full data URL for display
+  raw: string;     // Base64 string for API
+  mime: string;    // Mime type
+}
 
 const App: React.FC = () => {
   // Language State (Default Chinese)
@@ -29,10 +37,8 @@ const App: React.FC = () => {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.SQUARE);
   const [imageSize, setImageSize] = useState<ImageSize>(ImageSize.ONE_K);
   
-  // Reference Image State
-  const [refImage, setRefImage] = useState<string | null>(null); // Base64 for preview
-  const [refImageRaw, setRefImageRaw] = useState<string | null>(null); // Raw base64 for API
-  const [refImageMime, setRefImageMime] = useState<string | null>(null);
+  // Reference Images State
+  const [refImages, setRefImages] = useState<UploadedImage[]>([]);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +76,10 @@ const App: React.FC = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (refImages.length >= MAX_REFERENCE_IMAGES) {
+        setError(t.maxImagesReached);
+        return;
+      }
       if (file.size > 5 * 1024 * 1024) { // 5MB limit check
          setError(t.errorImageLarge);
          return;
@@ -78,33 +88,37 @@ const App: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
-        setRefImage(result);
         
         // Extract raw base64 and mime type
         // Data URL format: "data:image/jpeg;base64,/9j/4AAQSw..."
         const matches = result.match(/^data:(.+);base64,(.+)$/);
         if (matches && matches.length === 3) {
-           setRefImageMime(matches[1]);
-           setRefImageRaw(matches[2]);
+           const newImage: UploadedImage = {
+             id: crypto.randomUUID(),
+             preview: result,
+             mime: matches[1],
+             raw: matches[2]
+           };
+           setRefImages(prev => [...prev, newImage]);
            setError(null);
         } else {
            setError(t.errorProcessImage);
         }
+        
+        // Reset input to allow selecting the same file again if needed
+        if (fileInputRef.current) fileInputRef.current.value = "";
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const clearRefImage = () => {
-    setRefImage(null);
-    setRefImageRaw(null);
-    setRefImageMime(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const removeRefImage = (idToRemove: string) => {
+    setRefImages(prev => prev.filter(img => img.id !== idToRemove));
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() && !refImageRaw) return;
+    if (!prompt.trim() && refImages.length === 0) return;
     if (!apiKey) {
       setError(t.errorApiKey);
       setIsSettingsOpen(true);
@@ -120,8 +134,10 @@ const App: React.FC = () => {
       model,
       aspectRatio,
       imageSize,
-      referenceImage: refImageRaw || undefined,
-      referenceImageMimeType: refImageMime || undefined
+      referenceImages: refImages.length > 0 ? refImages.map(img => ({
+        data: img.raw,
+        mimeType: img.mime
+      })) : undefined
     };
 
     try {
@@ -136,7 +152,7 @@ const App: React.FC = () => {
           model: settings.model,
           aspectRatio: settings.aspectRatio,
           imageSize: settings.imageSize,
-          hasReferenceImage: !!refImageRaw
+          referenceImageCount: refImages.length
         }
       };
 
@@ -240,35 +256,41 @@ const App: React.FC = () => {
             <div>
               <label className="block text-sm font-medium text-white mb-2 flex justify-between">
                 <span>{t.refImage}</span>
-                <span className="text-xs text-neutral-500 font-normal">{t.optional}</span>
+                <span className="text-xs text-neutral-500 font-normal">{refImages.length}/{MAX_REFERENCE_IMAGES} {t.optional}</span>
               </label>
               
-              {!refImage ? (
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-32 border-2 border-dashed border-neutral-700 hover:border-banana-500/50 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-colors group bg-neutral-950/50"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-neutral-600 group-hover:text-banana-400 transition-colors mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-xs text-neutral-500 group-hover:text-neutral-300">{t.uploadText}</span>
-                </div>
-              ) : (
-                <div className="relative rounded-xl overflow-hidden border border-neutral-700 group">
-                   <img src={refImage} alt="Reference" className="w-full h-40 object-cover" />
-                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <div className="grid grid-cols-3 gap-2">
+                {/* Existing Images */}
+                {refImages.map((img) => (
+                  <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden border border-neutral-700 group">
+                    <img src={img.preview} alt="Reference" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <button 
                         type="button"
-                        onClick={clearRefImage}
-                        className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-sm transition-transform hover:scale-110"
+                        onClick={() => removeRefImage(img.id)}
+                        className="bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition-transform hover:scale-110"
                       >
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                          </svg>
                       </button>
-                   </div>
-                </div>
-              )}
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Upload Button */}
+                {refImages.length < MAX_REFERENCE_IMAGES && (
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="aspect-square border-2 border-dashed border-neutral-800 hover:border-banana-500/50 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors group bg-neutral-950/50"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-neutral-600 group-hover:text-banana-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              
               <input 
                 type="file" 
                 ref={fileInputRef}
@@ -349,9 +371,9 @@ const App: React.FC = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={isGenerating || (!prompt.trim() && !refImageRaw)}
+              disabled={isGenerating || (!prompt.trim() && refImages.length === 0)}
               className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                isGenerating || (!prompt.trim() && !refImageRaw)
+                isGenerating || (!prompt.trim() && refImages.length === 0)
                   ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
                   : 'bg-gradient-to-r from-banana-500 to-banana-600 text-black hover:from-banana-400 hover:to-banana-500 shadow-lg shadow-banana-500/25 active:scale-95'
               }`}
@@ -424,12 +446,12 @@ const App: React.FC = () => {
                     <span className="uppercase tracking-wide">{selectedImage.settings.model.includes('flash') ? 'Banana' : 'Banana Pro'}</span>
                     <span>{selectedImage.settings.imageSize}</span>
                     <span>{t.aspectRatios[selectedImage.settings.aspectRatio]}</span>
-                    {selectedImage.settings.hasReferenceImage && (
+                    {selectedImage.settings.referenceImageCount && selectedImage.settings.referenceImageCount > 0 && (
                         <span className="flex items-center gap-1 text-banana-400">
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                               <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
                            </svg>
-                           {t.refImageUsed}
+                           {selectedImage.settings.referenceImageCount} {t.imagesCount}
                         </span>
                     )}
                   </div>

@@ -22,3 +22,4 @@ export const MODEL_OPTIONS = [
 
 export const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 export const DEFAULT_MODEL = ModelType.NANO_BANANA_PRO;
+export const MAX_REFERENCE_IMAGES = 5;
