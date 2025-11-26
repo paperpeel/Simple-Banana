@@ -13,27 +13,46 @@ export const generateImage = async ({ settings, baseUrl, apiKey }: GenerateImage
     throw new Error("API Key is missing. Please configure it in Settings.");
   }
 
-  // Initialize client with user-provided API key and Base URL (Proxy)
-  // We set the base URL in multiple places to ensure compatibility with different SDK versions
+  // Initialize client configuration
   const clientConfig: any = { 
     apiKey: apiKey 
   };
 
-  if (baseUrl) {
-    // Remove trailing slash to prevent double slashes in URL construction
-    const cleanUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  // PROXY LOGIC: "Nuclear Option" - Fetch Interceptor
+  // If a custom Base URL is provided, we override the global fetch behavior for this client instance.
+  // This guarantees that the request goes to the proxy, regardless of what the SDK tries to do internally.
+  if (baseUrl && !baseUrl.includes("generativelanguage.googleapis.com")) {
+    console.log("[Nano Banana Service] Activating Proxy Interceptor:", baseUrl);
     
-    // Strategy 1: Standard requestOptions (Common in JS SDKs)
-    clientConfig.requestOptions = {
-      baseUrl: cleanUrl,
-      // Some proxies might require specific headers, but we leave that to the proxy config
+    // Remove trailing slash from user's URL for clean replacement
+    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    
+    // The default Google endpoint that the SDK will try to hit
+    const defaultEndpoint = "https://generativelanguage.googleapis.com";
+
+    // Custom fetch implementation
+    const customFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      let urlStr = input.toString();
+      
+      // Check if the SDK is trying to hit the default endpoint
+      if (urlStr.includes(defaultEndpoint)) {
+        // Replace the default endpoint with the user's proxy URL
+        const newUrl = urlStr.replace(defaultEndpoint, cleanBaseUrl);
+        console.debug(`[Proxy Redirect] ${urlStr} -> ${newUrl}`);
+        
+        // Return the fetch call with the modified URL
+        return fetch(newUrl, init);
+      }
+      
+      // Fallback for other URLs (unlikely in this context)
+      return fetch(input, init);
     };
-    
-    // Strategy 2: Direct properties (Used in some Google client libraries)
-    clientConfig.baseUrl = cleanUrl;
-    clientConfig.apiEndpoint = cleanUrl;
-    
-    console.log("[Nano Banana Service] Using Custom Base URL:", cleanUrl);
+
+    // Inject the custom fetch into requestOptions.
+    // This is supported by the @google/genai SDK to override the transport layer.
+    clientConfig.requestOptions = {
+      fetch: customFetch
+    };
   }
 
   const ai = new GoogleGenAI(clientConfig);
@@ -125,10 +144,13 @@ export const generateImage = async ({ settings, baseUrl, apiKey }: GenerateImage
     if (error instanceof Error) {
         // Enhance error message for common proxy issues
         if (error.message.includes("404")) {
-           throw new Error(`Proxy Error: Endpoint not found (404). Check your Base URL settings.`);
+           throw new Error(`Proxy Error: Endpoint not found (404). Your proxy URL might be incorrect or the server is down.`);
         }
         if (error.message.includes("403") || error.message.includes("401")) {
-           throw new Error(`Permission Error: Invalid API Key.`);
+           throw new Error(`Permission Error: Invalid API Key or Proxy refused connection.`);
+        }
+        if (error.message.includes("Failed to fetch")) {
+            throw new Error(`Network Error: Could not connect to Proxy. Check CORS settings on your proxy server.`);
         }
         // Pass through the enhanced error messages from above
         throw error;
