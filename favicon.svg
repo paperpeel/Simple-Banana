@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background Circle (Dark Theme) -->
+  <circle cx="32" cy="32" r="32" fill="#1e1e1e"/>
+  
+  <!-- Banana Body -->
+  <path d="M46.5 17.5C44 17.5 32 24 25 36c-7 12-7 14-7 14s4 3 11-1c11-6.5 18-18 20.5-27s1-4.5-3-4.5z" fill="#eab308"/>
+  
+  <!-- Highlight/Detail Line -->
+  <path d="M45 19c-1.5 1-11 7-16 17s-4 8-4 8" stroke="#fde047" stroke-width="2" stroke-linecap="round" fill="none"/>
+  
+  <!-- Stem Tip -->
+  <path d="M46.5 17.5c1-1 2-1 2.5 0" stroke="#ca8a04" stroke-width="2" stroke-linecap="round"/>
+</svg>
