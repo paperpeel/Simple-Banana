@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { AspectRatio, ImageSize, GenerationSettings, GeneratedImage, ModelType, Language } from './types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { AspectRatio, ImageSize, GenerationSettings, GeneratedImage, HistoryItem, ModelType, Language } from './types';
 import { ASPECT_RATIO_OPTIONS, IMAGE_SIZE_OPTIONS, MODEL_OPTIONS, DEFAULT_BASE_URL, DEFAULT_MODEL, MAX_REFERENCE_IMAGES } from './constants';
 import { generateImage } from './services/geminiService';
 import SettingsModal from './components/SettingsModal';
 import Gallery from './components/Gallery';
+import HistoryList from './components/HistoryList';
 import { translations } from './locales';
 
 // Interface for managing UI state of uploaded images
@@ -15,7 +16,7 @@ interface UploadedImage {
   mime: string;    // Mime type
 }
 
-const HISTORY_STORAGE_KEY = 'gemini_image_history';
+const HISTORY_STORAGE_KEY = 'gemini_prompt_history';
 
 const App: React.FC = () => {
   // Language State (Default Chinese)
@@ -44,9 +45,14 @@ const App: React.FC = () => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<string | null>(null);
   
   // Data State
-  const [history, setHistory] = useState<GeneratedImage[]>(() => {
+  // sessionImages: Stores full images (Metadata + Base64) for the current session ONLY.
+  const [sessionImages, setSessionImages] = useState<GeneratedImage[]>([]);
+  
+  // history: Stores ONLY metadata for persistence.
+  const [history, setHistory] = useState<HistoryItem[]>(() => {
     try {
       const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
       return stored ? JSON.parse(stored) : [];
@@ -55,12 +61,12 @@ const App: React.FC = () => {
       return [];
     }
   });
+
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   
   // UI State
+  const [activeTab, setActiveTab] = useState<'gallery' | 'history'>('gallery');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showNotification, setShowNotification] = useState(false);
-  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   // Scroll ref
   const resultsEndRef = useRef<HTMLDivElement>(null);
@@ -75,32 +81,23 @@ const App: React.FC = () => {
     localStorage.setItem('app_language', language);
   }, [language]);
 
-  // Persistent History Logic with Quota Management
-  const updateHistory = (newHistory: GeneratedImage[]) => {
+  // Persist History (Metadata Only)
+  const updateHistory = (newHistory: HistoryItem[]) => {
     setHistory(newHistory);
     try {
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(newHistory));
-      setStorageWarning(null);
-    } catch (e: any) {
-      if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-        console.warn("LocalStorage quota exceeded. Trimming history.");
-        // Recursively remove oldest items until it fits
-        const trimmedHistory = [...newHistory];
-        // We assume newHistory has the newest item at index 0. We remove from the end.
-        if (trimmedHistory.length > 0) {
-           trimmedHistory.pop(); // Remove oldest
-           updateHistory(trimmedHistory); // Recursive call to try saving again
-           setStorageWarning(t.storageFull);
-           setTimeout(() => setStorageWarning(null), 5000);
-        }
-      } else {
-        console.error("Error saving history:", e);
-      }
+    } catch (e) {
+      console.error("Error saving history metadata:", e);
     }
   };
 
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'zh' : 'en');
+  };
+
+  const showNotificationMsg = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const handleSettingsSave = (newUrl: string, newKey: string) => {
@@ -123,8 +120,6 @@ const App: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
-        
-        // Extract raw base64 and mime type
         const matches = result.match(/^data:(.+);base64,(.+)$/);
         if (matches && matches.length === 3) {
            const newImage: UploadedImage = {
@@ -138,8 +133,6 @@ const App: React.FC = () => {
         } else {
            setError(t.errorProcessImage);
         }
-        
-        // Reset input
         if (fileInputRef.current) fileInputRef.current.value = "";
       };
       reader.readAsDataURL(file);
@@ -148,6 +141,14 @@ const App: React.FC = () => {
 
   const removeRefImage = (idToRemove: string) => {
     setRefImages(prev => prev.filter(img => img.id !== idToRemove));
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -177,11 +178,15 @@ const App: React.FC = () => {
     try {
       const imageUrl = await generateImage({ settings, baseUrl, apiKey });
       
-      const newImage: GeneratedImage = {
-        id: crypto.randomUUID(),
-        url: imageUrl,
+      const approxSize = Math.round((imageUrl.length - 22) * 0.75);
+      const uuid = crypto.randomUUID();
+      const timestamp = Date.now();
+
+      // 1. Create Metadata Item for History
+      const historyItem: HistoryItem = {
+        id: uuid,
         prompt: settings.prompt,
-        timestamp: Date.now(),
+        timestamp: timestamp,
         settings: {
           model: settings.model,
           aspectRatio: settings.aspectRatio,
@@ -190,13 +195,20 @@ const App: React.FC = () => {
         }
       };
 
-      const newHistory = [newImage, ...history];
-      updateHistory(newHistory);
-      setSelectedImage(newImage);
-      
-      setShowNotification(true);
-      setTimeout(() => setShowNotification(false), 3000);
+      // 2. Create Full Image Object for Session
+      const newSessionImage: GeneratedImage = {
+        ...historyItem,
+        url: imageUrl,
+        fileSize: approxSize,
+      };
 
+      // Update State
+      setSessionImages(prev => [newSessionImage, ...prev]);
+      updateHistory([historyItem, ...history]);
+      
+      setSelectedImage(newSessionImage);
+      setActiveTab('gallery');
+      
     } catch (err: any) {
       setError(err.message || t.errorGenFailed);
     } finally {
@@ -213,19 +225,35 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleDeleteImage = (img: GeneratedImage) => {
-    const newHistory = history.filter(item => item.id !== img.id);
-    updateHistory(newHistory);
+  const handleDeleteSessionImage = (img: GeneratedImage) => {
+    setSessionImages(prev => prev.filter(item => item.id !== img.id));
     if (selectedImage?.id === img.id) {
       setSelectedImage(null);
     }
   };
 
+  const handleDeleteHistoryItem = (item: HistoryItem) => {
+    const newHistory = history.filter(h => h.id !== item.id);
+    updateHistory(newHistory);
+  };
+
   const handleClearHistory = () => {
     if (window.confirm(t.confirmClear)) {
       updateHistory([]);
-      setSelectedImage(null);
     }
+  };
+
+  // Restore parameters from history to form
+  const handleRestoreParams = (item: HistoryItem) => {
+    setPrompt(item.prompt);
+    setModel(item.settings.model);
+    setAspectRatio(item.settings.aspectRatio);
+    // Only restore imageSize if available, otherwise default
+    if (item.settings.imageSize) {
+      setImageSize(item.settings.imageSize);
+    }
+    // We cannot restore reference images data as they are not saved in history
+    showNotificationMsg(t.paramsRestored);
   };
 
   return (
@@ -470,18 +498,18 @@ const App: React.FC = () => {
               <span>{error}</span>
             </div>
           )}
-          
-          {storageWarning && (
-            <div className="bg-yellow-900/20 border border-yellow-900/50 text-yellow-200 px-4 py-3 rounded-xl flex items-start gap-3 animate-fade-in-down">
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+          {notification && (
+            <div className="fixed top-20 right-8 z-50 bg-banana-500 text-black px-4 py-3 rounded-xl shadow-lg shadow-banana-500/20 flex items-center gap-2 animate-fade-in-down">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                </svg>
-               <span>{storageWarning}</span>
+               <span className="font-semibold">{notification}</span>
             </div>
           )}
 
-          {/* Selected/Latest Image Preview */}
-          {selectedImage ? (
+          {/* Latest Selected Image Preview (Only visible if something selected in Gallery tab) */}
+          {selectedImage && activeTab === 'gallery' && (
              <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-1 lg:p-2 overflow-hidden relative group">
                 <img 
                   src={selectedImage.url} 
@@ -490,7 +518,7 @@ const App: React.FC = () => {
                 />
                 <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={() => handleDeleteImage(selectedImage)}
+                      onClick={() => handleDeleteSessionImage(selectedImage)}
                       className="bg-red-900/80 hover:bg-red-600 text-white p-2 rounded-lg backdrop-blur-sm transition-colors border border-white/10"
                       title={t.delete}
                     >
@@ -514,55 +542,72 @@ const App: React.FC = () => {
                     <span className="uppercase tracking-wide">{selectedImage.settings.model.includes('flash') ? 'Banana' : 'Banana Pro'}</span>
                     <span>{selectedImage.settings.imageSize}</span>
                     <span>{t.aspectRatios[selectedImage.settings.aspectRatio]}</span>
-                    {selectedImage.settings.referenceImageCount && selectedImage.settings.referenceImageCount > 0 && (
-                        <span className="flex items-center gap-1 text-banana-400">
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                           </svg>
-                           {selectedImage.settings.referenceImageCount} {t.imagesCount}
-                        </span>
-                    )}
+                    <span className="text-neutral-400 border border-neutral-700 rounded px-1">{formatBytes(selectedImage.fileSize || 0)}</span>
                   </div>
                 </div>
              </div>
-          ) : (
-            // Placeholder when no generation happened yet
-            !isGenerating && history.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-[50vh] text-neutral-600 bg-neutral-900/20 border border-neutral-800 rounded-2xl border-dashed">
-                    <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <p className="text-lg font-medium text-neutral-500">{t.readyToCreate}</p>
-                    <p className="text-sm">{t.setApiKeyInfo}</p>
-                </div>
-            )
           )}
 
-          {/* History Grid */}
-          {history.length > 0 && (
-            <div className="mt-8 border-t border-neutral-800 pt-8">
+          {/* Main Content Area */}
+          <div className="border-t border-neutral-800 pt-2">
               <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-lg font-semibold text-white">{t.gallery}</h3>
-                 <button 
-                    onClick={handleClearHistory}
-                    className="text-xs text-neutral-500 hover:text-red-400 transition-colors flex items-center gap-1"
-                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    {t.clearHistory}
-                 </button>
+                 {/* Tabs */}
+                 <div className="flex gap-4 bg-neutral-900/50 p-1 rounded-xl">
+                    <button
+                      onClick={() => setActiveTab('gallery')}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        activeTab === 'gallery' 
+                        ? 'bg-neutral-800 text-white shadow-sm' 
+                        : 'text-neutral-500 hover:text-neutral-300'
+                      }`}
+                    >
+                      {t.gallery}
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('history')}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        activeTab === 'history' 
+                        ? 'bg-neutral-800 text-white shadow-sm' 
+                        : 'text-neutral-500 hover:text-neutral-300'
+                      }`}
+                    >
+                      {t.history}
+                    </button>
+                 </div>
+
+                 {/* Clear Action (Depends on Tab) */}
+                 {activeTab === 'history' && history.length > 0 && (
+                   <button 
+                      onClick={handleClearHistory}
+                      className="text-xs text-neutral-500 hover:text-red-400 transition-colors flex items-center gap-1 px-2"
+                   >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      {t.clearHistory}
+                   </button>
+                 )}
               </div>
-              <Gallery 
-                images={history} 
-                onSelect={setSelectedImage} 
-                onDelete={handleDeleteImage}
-                t={t} 
-              />
-            </div>
-          )}
+              
+              {/* Tab Content */}
+              <div className="min-h-[300px]">
+                {activeTab === 'gallery' ? (
+                  <Gallery 
+                    images={sessionImages} 
+                    onSelect={setSelectedImage} 
+                    onDelete={handleDeleteSessionImage}
+                    t={t} 
+                  />
+                ) : (
+                  <HistoryList
+                    items={history}
+                    onRestore={handleRestoreParams}
+                    onDelete={handleDeleteHistoryItem}
+                    t={t}
+                  />
+                )}
+              </div>
+          </div>
           
           <div ref={resultsEndRef} />
         </div>

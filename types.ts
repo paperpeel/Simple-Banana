@@ -34,9 +34,9 @@ export interface GenerationSettings {
   referenceImages?: ReferenceImage[];
 }
 
-export interface GeneratedImage {
+// Base interface for persistent history (metadata only)
+export interface HistoryItem {
   id: string;
-  url: string;
   prompt: string;
   timestamp: number;
   settings: {
@@ -45,6 +45,12 @@ export interface GeneratedImage {
     imageSize: ImageSize;
     referenceImageCount?: number;
   };
+}
+
+// Extended interface for session storage (includes heavy image data)
+export interface GeneratedImage extends HistoryItem {
+  url: string;
+  fileSize?: number; // Size in bytes
 }
 
 export interface AppConfig {
