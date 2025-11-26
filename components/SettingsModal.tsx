@@ -7,24 +7,35 @@ interface SettingsModalProps {
   onClose: () => void;
   currentBaseUrl: string;
   currentApiKey: string;
-  onSave: (url: string, key: string) => void;
+  currentUseStream: boolean;
+  onSave: (url: string, key: string, useStream: boolean) => void;
   t: any; // Translation object
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentBaseUrl, currentApiKey, onSave, t }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  currentBaseUrl, 
+  currentApiKey, 
+  currentUseStream,
+  onSave, 
+  t 
+}) => {
   const [url, setUrl] = useState(currentBaseUrl);
   const [key, setKey] = useState(currentApiKey);
+  const [useStream, setUseStream] = useState(currentUseStream);
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     setUrl(currentBaseUrl);
     setKey(currentApiKey);
-  }, [currentBaseUrl, currentApiKey, isOpen]);
+    setUseStream(currentUseStream);
+  }, [currentBaseUrl, currentApiKey, currentUseStream, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    onSave(url, key);
+    onSave(url, key, useStream);
     onClose();
   };
 
@@ -93,6 +104,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentB
           <div className="text-xs text-neutral-500 mt-2">
             {t.proxyHelp}
           </div>
+        </div>
+
+        {/* Stream Mode Toggle */}
+        <div className="mb-6 bg-neutral-900/50 p-3 rounded-lg border border-neutral-800">
+           <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-white">
+                 {t.streamMode}
+              </label>
+              <div 
+                 onClick={() => setUseStream(!useStream)}
+                 className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${useStream ? 'bg-banana-500' : 'bg-neutral-700'}`}
+              >
+                 <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform ${useStream ? 'translate-x-6' : 'translate-x-0'}`} />
+              </div>
+           </div>
+           <p className="text-xs text-neutral-500 mt-2">
+             {t.streamModeHelp}
+           </p>
         </div>
 
         <div className="flex justify-between items-center pt-2 border-t border-neutral-700">

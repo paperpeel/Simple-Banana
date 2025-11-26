@@ -33,6 +33,9 @@ const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>(() => {
     return localStorage.getItem('gemini_api_key') || '';
   });
+  const [useStream, setUseStream] = useState<boolean>(() => {
+    return localStorage.getItem('gemini_use_stream') === 'true';
+  });
   
   // Generation State
   const [prompt, setPrompt] = useState('');
@@ -75,7 +78,8 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('gemini_base_url', baseUrl);
     localStorage.setItem('gemini_api_key', apiKey);
-  }, [baseUrl, apiKey]);
+    localStorage.setItem('gemini_use_stream', String(useStream));
+  }, [baseUrl, apiKey, useStream]);
 
   useEffect(() => {
     localStorage.setItem('app_language', language);
@@ -100,9 +104,10 @@ const App: React.FC = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSettingsSave = (newUrl: string, newKey: string) => {
+  const handleSettingsSave = (newUrl: string, newKey: string, newUseStream: boolean) => {
     setBaseUrl(newUrl);
     setApiKey(newKey);
+    setUseStream(newUseStream);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,7 +177,8 @@ const App: React.FC = () => {
       referenceImages: refImages.length > 0 ? refImages.map(img => ({
         data: img.raw,
         mimeType: img.mime
-      })) : undefined
+      })) : undefined,
+      useStream: useStream
     };
 
     try {
@@ -191,7 +197,8 @@ const App: React.FC = () => {
           model: settings.model,
           aspectRatio: settings.aspectRatio,
           imageSize: settings.imageSize,
-          referenceImageCount: refImages.length
+          referenceImageCount: refImages.length,
+          useStream: settings.useStream
         }
       };
 
@@ -475,14 +482,26 @@ const App: React.FC = () => {
             </button>
           </form>
 
-          {/* Proxy Indicator */}
-          {baseUrl !== DEFAULT_BASE_URL && (
-            <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              <div className="text-xs text-blue-200">
-                <span className="font-semibold block">{t.proxyActive}</span>
-                <span className="opacity-70 truncate max-w-[200px] block">{baseUrl}</span>
-              </div>
+          {/* Proxy/Stream Indicator */}
+          {(baseUrl !== DEFAULT_BASE_URL || useStream) && (
+            <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 space-y-2">
+               {baseUrl !== DEFAULT_BASE_URL && (
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                  <div className="text-xs text-blue-200">
+                    <span className="font-semibold block">{t.proxyActive}</span>
+                    <span className="opacity-70 truncate max-w-[200px] block">{baseUrl}</span>
+                  </div>
+                </div>
+               )}
+               {useStream && (
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
+                  <div className="text-xs text-purple-200">
+                    <span className="font-semibold block">Async / Stream Mode</span>
+                  </div>
+                </div>
+               )}
             </div>
           )}
         </div>
@@ -619,6 +638,7 @@ const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         currentBaseUrl={baseUrl}
         currentApiKey={apiKey}
+        currentUseStream={useStream}
         onSave={handleSettingsSave}
         t={t}
       />

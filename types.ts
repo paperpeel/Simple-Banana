@@ -32,6 +32,7 @@ export interface GenerationSettings {
   imageSize: ImageSize;
   negativePrompt?: string;
   referenceImages?: ReferenceImage[];
+  useStream?: boolean; // New: Async/Stream mode flag
 }
 
 // Base interface for persistent history (metadata only)
@@ -44,6 +45,7 @@ export interface HistoryItem {
     aspectRatio: AspectRatio;
     imageSize: ImageSize;
     referenceImageCount?: number;
+    useStream?: boolean;
   };
 }
 
@@ -56,4 +58,5 @@ export interface GeneratedImage extends HistoryItem {
 export interface AppConfig {
   baseUrl: string;
   apiKey: string;
+  useStream: boolean;
 }
